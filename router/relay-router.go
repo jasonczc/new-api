@@ -78,6 +78,10 @@ func SetRelayRouter(router *gin.Engine) {
 		wsRouter.GET("/realtime", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIRealtime)
 		})
+		// Fish Audio streaming TTS (msgpack protocol, same path shape as upstream)
+		wsRouter.GET("/tts/live", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAIRealtime)
+		})
 	}
 	{
 		//http router
@@ -136,6 +140,9 @@ func SetRelayRouter(router *gin.Engine) {
 		httpRouter.POST("/audio/speech", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIAudio)
 		})
+		httpRouter.POST("/voice-design", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAIAudio)
+		})
 
 		// rerank related routes
 		httpRouter.POST("/rerank", func(c *gin.Context) {
@@ -180,6 +187,28 @@ func SetRelayRouter(router *gin.Engine) {
 	relayMjModeRouter.Use(middleware.SystemPerformanceCheck())
 	registerMjRouterGroup(relayMjModeRouter)
 	//relayMjRouter.Use()
+
+	// Fish Audio voice model management (voice clone + CRUD), free of charge.
+	// Ownership is tracked locally because one Fish Audio API key is shared by
+	// every gateway user, so upstream cannot tell voices apart by creator.
+	relayFishAudioRouter := router.Group("/fishaudio")
+	relayFishAudioRouter.Use(middleware.RouteTag("relay"))
+	relayFishAudioRouter.Use(middleware.SystemPerformanceCheck())
+	relayFishAudioRouter.Use(middleware.TokenAuth())
+	relayFishAudioRouter.Use(middleware.ModelRequestRateLimit())
+	{
+		// creation picks a channel through the distributor
+		createGroup := relayFishAudioRouter.Group("")
+		createGroup.Use(middleware.Distribute())
+		createGroup.POST("/model", controller.RelayFishAudioCreateVoice)
+
+		// listing is answered from the ownership table; per-voice calls route
+		// back to the channel the voice was created on
+		relayFishAudioRouter.GET("/model", controller.RelayFishAudioListVoices)
+		relayFishAudioRouter.GET("/model/:id", controller.RelayFishAudioVoiceById)
+		relayFishAudioRouter.PATCH("/model/:id", controller.RelayFishAudioVoiceById)
+		relayFishAudioRouter.DELETE("/model/:id", controller.RelayFishAudioVoiceById)
+	}
 
 	relaySunoRouter := router.Group("/suno")
 	relaySunoRouter.Use(middleware.RouteTag("relay"))

@@ -43,6 +43,8 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 	case relayconstant.RelayModeAudioTranslation:
 		fallthrough
 	case relayconstant.RelayModeAudioTranscription:
+		fallthrough
+	case relayconstant.RelayModeVoiceDesign:
 		err = relay.AudioHelper(c, info)
 	case relayconstant.RelayModeRerank:
 		err = relay.RerankHelper(c, info)
@@ -448,6 +450,28 @@ func RelayMidjourney(c *gin.Context) {
 		channelId := c.GetInt("channel_id")
 		logger.LogError(c, fmt.Sprintf("relay error (channel #%d, status code %d): %s", channelId, statusCode, fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result)))
 	}
+}
+
+func RelayFishAudioCreateVoice(c *gin.Context) {
+	respondFishAudio(c, relay.FishAudioCreateVoice(c))
+}
+
+func RelayFishAudioListVoices(c *gin.Context) {
+	respondFishAudio(c, relay.FishAudioListVoices(c))
+}
+
+func RelayFishAudioVoiceById(c *gin.Context) {
+	respondFishAudio(c, relay.FishAudioVoiceById(c))
+}
+
+func respondFishAudio(c *gin.Context, err *types.NewAPIError) {
+	if err == nil {
+		return
+	}
+	logger.LogError(c, fmt.Sprintf("fish audio voice relay error: %s", common.LocalLogPreview(err.Error())))
+	c.JSON(err.StatusCode, gin.H{
+		"error": err.ToOpenAIError(),
+	})
 }
 
 func RelayNotImplemented(c *gin.Context) {

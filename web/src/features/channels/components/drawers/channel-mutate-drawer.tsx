@@ -1278,6 +1278,14 @@ export function ChannelMutateDrawer({
       }
     }
 
+    // Type 61 (FishAudio) - set default base_url
+    if (currentType === 61) {
+      const currentBaseUrlValue = form.getValues('base_url')
+      if (!currentBaseUrlValue || currentBaseUrlValue === '') {
+        form.setValue('base_url', 'https://api.fish.audio')
+      }
+    }
+
     // Type 18 (Xunfei) - set default other (version)
     if (currentType === 18) {
       const currentOther = form.getValues('other')

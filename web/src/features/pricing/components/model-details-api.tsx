@@ -423,6 +423,147 @@ function buildImageSample(lang: Lang, ctx: SampleContext): string {
   ].join('\n')
 }
 
+function buildSpeechSample(lang: Lang, ctx: SampleContext): string {
+  const url = `${ctx.baseUrl}${ctx.endpointPath}`
+  const input = 'The quick brown fox jumped over the lazy dog.'
+  const voice = '<VOICE_ID>'
+
+  if (lang === 'curl') {
+    const body = JSON.stringify(
+      { model: ctx.modelName, input, voice, response_format: 'mp3' },
+      null,
+      2
+    )
+    return [
+      `curl ${url} \\`,
+      `  -H "Authorization: Bearer $${ctx.apiKeyEnv}" \\`,
+      `  -H "Content-Type: application/json" \\`,
+      `  -d '${body.replace(/\n/g, '\n     ')}' \\`,
+      `  --output speech.mp3`,
+    ].join('\n')
+  }
+  if (lang === 'python') {
+    return [
+      'from openai import OpenAI',
+      '',
+      `client = OpenAI(base_url="${ctx.baseUrl}/v1", api_key="<YOUR_API_KEY>")`,
+      '',
+      'with client.audio.speech.with_streaming_response.create(',
+      `    model="${ctx.modelName}",`,
+      `    voice="${voice}",`,
+      `    input="${input}",`,
+      `    response_format="mp3",`,
+      ') as response:',
+      '    response.stream_to_file("speech.mp3")',
+    ].join('\n')
+  }
+  if (lang === 'typescript') {
+    return [
+      `import fs from 'node:fs/promises'`,
+      `import OpenAI from 'openai'`,
+      '',
+      `const client = new OpenAI({`,
+      `  baseURL: '${ctx.baseUrl}/v1',`,
+      `  apiKey: process.env.${ctx.apiKeyEnv},`,
+      `})`,
+      '',
+      `const speech = await client.audio.speech.create({`,
+      `  model: '${ctx.modelName}',`,
+      `  voice: '${voice}',`,
+      `  input: '${input}',`,
+      `  response_format: 'mp3',`,
+      `})`,
+      '',
+      `await fs.writeFile('speech.mp3', Buffer.from(await speech.arrayBuffer()))`,
+    ].join('\n')
+  }
+  return [
+    `import { writeFile } from 'node:fs/promises'`,
+    '',
+    `const response = await fetch('${url}', {`,
+    `  method: 'POST',`,
+    `  headers: {`,
+    `    Authorization: \`Bearer \${process.env.${ctx.apiKeyEnv}}\`,`,
+    `    'Content-Type': 'application/json',`,
+    `  },`,
+    `  body: JSON.stringify({`,
+    `    model: '${ctx.modelName}',`,
+    `    input: '${input}',`,
+    `    voice: '${voice}',`,
+    `    response_format: 'mp3',`,
+    `  }),`,
+    `})`,
+    '',
+    `const audio = await response.arrayBuffer()`,
+    `await writeFile('speech.mp3', Buffer.from(audio))`,
+  ].join('\n')
+}
+
+function buildTranscriptionSample(lang: Lang, ctx: SampleContext): string {
+  const url = `${ctx.baseUrl}${ctx.endpointPath}`
+  const file = 'audio.mp3'
+
+  if (lang === 'curl') {
+    return [
+      `curl ${url} \\`,
+      `  -H "Authorization: Bearer $${ctx.apiKeyEnv}" \\`,
+      `  -F file=@${file} \\`,
+      `  -F model=${ctx.modelName}`,
+    ].join('\n')
+  }
+  if (lang === 'python') {
+    return [
+      'from openai import OpenAI',
+      '',
+      `client = OpenAI(base_url="${ctx.baseUrl}/v1", api_key="<YOUR_API_KEY>")`,
+      '',
+      `with open("${file}", "rb") as audio_file:`,
+      '    transcription = client.audio.transcriptions.create(',
+      `        model="${ctx.modelName}",`,
+      '        file=audio_file,',
+      '    )',
+      '',
+      'print(transcription.text)',
+    ].join('\n')
+  }
+  if (lang === 'typescript') {
+    return [
+      `import fs from 'node:fs'`,
+      `import OpenAI from 'openai'`,
+      '',
+      `const client = new OpenAI({`,
+      `  baseURL: '${ctx.baseUrl}/v1',`,
+      `  apiKey: process.env.${ctx.apiKeyEnv},`,
+      `})`,
+      '',
+      `const transcription = await client.audio.transcriptions.create({`,
+      `  model: '${ctx.modelName}',`,
+      `  file: fs.createReadStream('${file}'),`,
+      `})`,
+      '',
+      `console.log(transcription.text)`,
+    ].join('\n')
+  }
+  return [
+    `import { readFile } from 'node:fs/promises'`,
+    '',
+    `const form = new FormData()`,
+    `form.append('model', '${ctx.modelName}')`,
+    `form.append('file', new Blob([await readFile('${file}')]), '${file}')`,
+    '',
+    `const response = await fetch('${url}', {`,
+    `  method: 'POST',`,
+    `  headers: {`,
+    `    Authorization: \`Bearer \${process.env.${ctx.apiKeyEnv}}\`,`,
+    `  },`,
+    `  body: form,`,
+    `})`,
+    '',
+    `const data = await response.json()`,
+    `console.log(data.text)`,
+  ].join('\n')
+}
+
 function buildSample(
   lang: Lang,
   endpointType: string,
@@ -433,6 +574,9 @@ function buildSample(
   if (endpointType === 'embeddings' || endpointType === 'jina-rerank')
     return buildEmbeddingSample(lang, ctx)
   if (endpointType === 'image-generation') return buildImageSample(lang, ctx)
+  if (endpointType === 'audio-speech') return buildSpeechSample(lang, ctx)
+  if (endpointType === 'audio-transcription')
+    return buildTranscriptionSample(lang, ctx)
   return buildChatSample(lang, ctx)
 }
 

@@ -117,6 +117,11 @@ var defaultModelRatio = map[string]float64{
 	"tts-1-1106":                                7.5, // 1k characters -> $0.015
 	"tts-1-hd":                                  15,  // 1k characters -> $0.03
 	"tts-1-hd-1106":                             15,  // 1k characters -> $0.03
+	"s1":                                        7.5, // Fish Audio TTS, $15 / 1M UTF-8 bytes, token = byte
+	"s2-pro":                                    7.5, // Fish Audio TTS, $15 / 1M UTF-8 bytes, token = byte
+	"s2.1-pro":                                  7.5, // Fish Audio TTS, $15 / 1M UTF-8 bytes, token = byte
+	"s2.1-pro-free":                             0,   // Fish Audio TTS free tier
+	"transcribe-1":                              3,   // Fish Audio ASR, $0.36 / audio hour, 1 minute = 1000 tokens -> $0.006 / minute
 	"davinci":                                   10,
 	"curie":                                     10,
 	"text-embedding-3-small":                    0.01,
@@ -301,6 +306,7 @@ var defaultModelPrice = map[string]float64{
 	"veo-3.0-fast-generate-001":      0.15,
 	"veo-3.1-generate-preview":       0.4,
 	"veo-3.1-fast-generate-preview":  0.15,
+	"voice-design-1":                 0.01, // Fish Audio voice design, per successful request
 }
 
 var defaultAudioRatio = map[string]float64{

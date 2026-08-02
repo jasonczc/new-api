@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -14,6 +15,12 @@ import (
 
 func WssHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
+
+	// websocket sessions carry no dto.Request; pass nil so only the channel's
+	// model mapping is applied (without it, channel aliases silently no-op here)
+	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
+		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
+	}
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {

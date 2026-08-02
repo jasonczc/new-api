@@ -399,6 +399,30 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("relay_mode", relayMode)
 	}
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/voice-design") {
+		// The route decides the operation here, so the model — and with it the
+		// price — comes from the route as well, the same way midjourney and suno
+		// derive theirs. Honouring a client-supplied name would let a caller be
+		// charged a per-token speech rate for a per-request voice design call.
+		modelRequest.Model = constant.FishAudioVoiceDesignModel
+	}
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/tts/live") {
+		// Fish Audio streaming TTS selects the model via the `model` header
+		modelRequest.Model = common.GetStringIfEmpty(c.Request.Header.Get("model"), constant.FishAudioDefaultRoutingModel)
+	}
+	if strings.HasPrefix(c.Request.URL.Path, "/fishaudio/") {
+		// Voice management needs a Fish Audio channel but no particular model.
+		// `?model=` lets callers steer away from a channel that only serves the
+		// free tier, and is restricted to this provider's speech models: channel
+		// selection matches on group and model name alone, so an unconstrained
+		// name would let the caller route the call — and the channel key it
+		// carries — to any other provider in their group.
+		routingModel := constant.FishAudioDefaultRoutingModel
+		if requested := strings.TrimSpace(c.Query("model")); constant.FishAudioTTSModels[requested] {
+			routingModel = requested
+		}
+		modelRequest.Model = routingModel
+	}
 	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
 		// playground chat completions
 		req, err := getModelFromRequest(c)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -68,6 +69,11 @@ func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, 
 		if audioRequest.Model == "" {
 			return nil, errors.New("model is required")
 		}
+	case relayconstant.RelayModeVoiceDesign:
+		// Pinned to the route, matching the routing model the distributor picked;
+		// see middleware/distributor.go. A client-supplied name here would price
+		// the call as speech rather than as one voice design request.
+		audioRequest.Model = constant.FishAudioVoiceDesignModel
 	default:
 		if audioRequest.Model == "" {
 			return nil, errors.New("model is required")
