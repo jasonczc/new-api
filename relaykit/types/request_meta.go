@@ -15,6 +15,7 @@ const (
 	TokenTypeTextNumber TokenType = "text_number" // Text or number tokens
 	TokenTypeTokenizer  TokenType = "tokenizer"   // Tokenizer tokens
 	TokenTypeImage      TokenType = "image"       // Image tokens
+	TokenTypeUTF8Bytes  TokenType = "utf8_bytes"  // UTF-8 byte count, for providers billing per byte
 )
 
 type TokenCountMeta struct {

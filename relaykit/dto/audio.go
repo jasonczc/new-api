@@ -13,6 +13,7 @@ type AudioRequest struct {
 	Input          string          `json:"input"`
 	Voice          string          `json:"voice"`
 	Instructions   string          `json:"instructions,omitempty"`
+	Instruction    string          `json:"instruction,omitempty"` // fish audio voice design prompt
 	ResponseFormat string          `json:"response_format,omitempty"`
 	Speed          *float64        `json:"speed,omitempty"`
 	StreamFormat   string          `json:"stream_format,omitempty"`
@@ -30,11 +31,20 @@ type AudioRequest struct {
 }
 
 func (r *AudioRequest) GetTokenCountMeta() *types.TokenCountMeta {
+	combineText := r.Input
+	if combineText == "" {
+		// voice design carries its prompt in `instruction`; include it so the
+		// sensitive-word check sees it
+		combineText = r.Instruction
+	}
 	meta := &types.TokenCountMeta{
-		CombineText: r.Input,
+		CombineText: combineText,
 		TokenType:   types.TokenTypeTextNumber,
 	}
-	if strings.Contains(r.Model, "gpt") {
+	if types.IsByteBilledTTSModel(r.Model) {
+		// Fish Audio bills per UTF-8 byte; reserve on the same basis we settle on
+		meta.TokenType = types.TokenTypeUTF8Bytes
+	} else if strings.Contains(r.Model, "gpt") {
 		meta.TokenType = types.TokenTypeTokenizer
 	}
 	return meta

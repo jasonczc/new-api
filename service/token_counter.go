@@ -222,9 +222,12 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 	model := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 	tkm := 0
 
-	if meta.TokenType == types.TokenTypeTextNumber {
+	switch meta.TokenType {
+	case types.TokenTypeTextNumber:
 		tkm += utf8.RuneCountInString(meta.CombineText)
-	} else {
+	case types.TokenTypeUTF8Bytes:
+		tkm += len(meta.CombineText)
+	default:
 		tkm += CountTextToken(meta.CombineText, model)
 	}
 

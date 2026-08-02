@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +113,17 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 
 	endpointType = normalizeChannelTestEndpoint(channel, testModel, endpointType)
+	if constant.EndpointType(endpointType) == constant.EndpointTypeAudioTranscription {
+		// transcription needs a real audio upload, which the test harness
+		// (JSON request bodies only) cannot produce
+		return testResult{
+			localErr: errors.New("audio transcription channel test is not supported, it requires an audio file upload"),
+		}
+	}
+	if channel.Type == constant.ChannelTypeFishAudio {
+		// Fish Audio has no chat endpoint; probe speech synthesis instead
+		return testFishAudioChannel(channel, testUserID, testModel)
+	}
 
 	requestPath := "/v1/chat/completions"
 
@@ -204,6 +216,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			relayFormat = types.RelayFormatOpenAIImage
 		case constant.EndpointTypeEmbeddings:
 			relayFormat = types.RelayFormatEmbedding
+		case constant.EndpointTypeAudioSpeech, constant.EndpointTypeAudioTranscription:
+			relayFormat = types.RelayFormatOpenAIAudio
 		default:
 			relayFormat = types.RelayFormatOpenAI
 		}
@@ -663,6 +677,158 @@ func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {
 	return channel != nil && channel.Type == constant.ChannelTypeCodex
 }
 
+// testFishAudioChannel probes a Fish Audio channel with a tiny speech
+// synthesis request. The channel has no chat endpoint, so the default
+// /v1/chat/completions probe would always fail. The free tier model is
+// preferred so health checks cost nothing.
+func testFishAudioChannel(channel *model.Channel, testUserID int, testModel string) testResult {
+	tik := time.Now()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	if !constant.IsByteBilledTTSModel(testModel) {
+		testModel = "s2.1-pro-free"
+		for _, name := range channel.GetModels() {
+			if constant.IsByteBilledTTSModel(strings.TrimSpace(name)) {
+				testModel = strings.TrimSpace(name)
+				break
+			}
+		}
+	}
+
+	audioRequest := dto.AudioRequest{
+		Model:          testModel,
+		Input:          "hi",
+		ResponseFormat: "mp3",
+	}
+	rawRequestBody, err := common.Marshal(audioRequest)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
+		}
+	}
+
+	c.Request = &http.Request{
+		Method: http.MethodPost,
+		URL:    &url.URL{Path: "/v1/audio/speech"},
+		Body:   io.NopCloser(bytes.NewReader(rawRequestBody)),
+		Header: make(http.Header),
+	}
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	cache, err := model.GetUserCache(testUserID)
+	if err != nil {
+		return testResult{context: c, localErr: err}
+	}
+	cache.WriteContext(c)
+	c.Set("id", testUserID)
+	c.Set("channel", channel.Type)
+	c.Set("base_url", channel.GetBaseURL())
+	group, _ := model.GetUserGroup(testUserID, false)
+	c.Set("group", group)
+
+	if newAPIError := middleware.SetupContextForSelectedChannel(c, channel, testModel); newAPIError != nil {
+		return testResult{context: c, localErr: newAPIError, newAPIError: newAPIError}
+	}
+
+	info, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAIAudio, &audioRequest, nil)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeGenRelayInfoFailed),
+		}
+	}
+	info.IsChannelTest = true
+	info.RelayMode = relayconstant.RelayModeAudioSpeech
+	info.InitChannelMeta(c)
+
+	adaptor := relay.GetAdaptor(info.ApiType)
+	if adaptor == nil {
+		err := fmt.Errorf("invalid api type: %d, adaptor is nil", info.ApiType)
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeInvalidApiType),
+		}
+	}
+	adaptor.Init(info)
+
+	if err := helper.ModelMappedHelper(c, info, &audioRequest); err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeChannelModelMappedError),
+		}
+	}
+
+	requestBody, err := adaptor.ConvertAudioRequest(c, info, audioRequest)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeConvertRequestFailed, http.StatusInternalServerError),
+		}
+	}
+
+	rawResp, err := adaptor.DoRequest(c, info, requestBody)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError),
+		}
+	}
+
+	resp, ok := rawResp.(*http.Response)
+	if !ok || resp == nil {
+		err := errors.New("fish audio channel test got no response")
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+		}
+	}
+	defer service.CloseResponseBodyGracefully(resp)
+
+	if resp.StatusCode != http.StatusOK {
+		respErr := service.RelayErrorHandler(c.Request.Context(), resp, true)
+		common.SysError(fmt.Sprintf(
+			"fish audio channel test bad response: channel_id=%d name=%s model=%s status=%d err=%v",
+			channel.Id, channel.Name, info.UpstreamModelName, resp.StatusCode, respErr,
+		))
+		return testResult{
+			context:     c,
+			localErr:    respErr,
+			newAPIError: respErr,
+		}
+	}
+
+	// drain so the channel is only reported healthy when audio actually arrives
+	written, err := io.Copy(io.Discard, resp.Body)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
+		}
+	}
+	if written == 0 {
+		err := errors.New("fish audio channel test received empty audio")
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+		}
+	}
+
+	common.SysLog(fmt.Sprintf("testing fish audio channel #%d, model=%s, audio bytes=%d, took %.2fs",
+		channel.Id, info.UpstreamModelName, written, time.Since(tik).Seconds()))
+	return testResult{context: c}
+}
+
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	if len(jsonBytes) == 0 {
 		return ""
@@ -719,6 +885,13 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				Query:     "What is Deep Learning?",
 				Documents: []any{"Deep Learning is a subset of machine learning.", "Machine learning is a field of artificial intelligence."},
 				TopN:      lo.ToPtr(2),
+			}
+		case constant.EndpointTypeAudioSpeech:
+			// 返回 AudioRequest，合成一小段音频
+			return &dto.AudioRequest{
+				Model:          model,
+				Input:          "hi",
+				ResponseFormat: "mp3",
 			}
 		case constant.EndpointTypeOpenAIResponse:
 			// 返回 OpenAIResponsesRequest

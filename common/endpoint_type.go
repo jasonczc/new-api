@@ -45,6 +45,13 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			constant.EndpointTypeOpenAIResponseCompact,
 			constant.EndpointTypeOpenAIAlphaSearch,
 		}
+	case constant.ChannelTypeFishAudio:
+		// audio-only provider: speech synthesis and transcription, no chat
+		if modelName == "transcribe-1" {
+			endpointTypes = []constant.EndpointType{constant.EndpointTypeAudioTranscription}
+		} else {
+			endpointTypes = []constant.EndpointType{constant.EndpointTypeAudioSpeech}
+		}
 	default:
 		if IsOpenAIResponseOnlyModel(modelName) {
 			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIResponse}

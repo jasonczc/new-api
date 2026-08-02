@@ -197,6 +197,7 @@ const endpointTypeOptions: Array<{ value: string; label: string }> = [
     label: 'Image Generation (/v1/images/generations)',
   },
   { value: 'embeddings', label: 'Embeddings (/v1/embeddings)' },
+  { value: 'audio-speech', label: 'Audio Speech (/v1/audio/speech)' },
 ]
 
 const endpointSelectContentClass = 'w-[460px] max-w-[calc(100vw-2rem)]'
@@ -208,6 +209,7 @@ const STREAM_INCOMPATIBLE_ENDPOINTS = new Set([
   'image-generation',
   'jina-rerank',
   'openai-response-compact',
+  'audio-speech',
 ])
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'
